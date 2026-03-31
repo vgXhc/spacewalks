@@ -6,8 +6,6 @@ library(lubridate)
 input_file = 'eva-data.json'
 output_file = 'eva-data.csv'
 graph_file = 'cumulative_eva_graph.png'
-fieldnames <- c("EVA #", "Country", "Crew    ", "Vehicle", "Date", "Duration", "Purpose")
-
 
 spacewalk_data <- read_json(input_file)
 data=as.data.frame(spacewalk_data[[1]])
