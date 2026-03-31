@@ -1,5 +1,6 @@
 library(jsonlite)
 library(lubridate)
+library(tidyverse)
 
 
 # https://data.nasa.gov/resource/eva.json (with modifications)
@@ -64,11 +65,13 @@ date <- df$date
 time <- df$time
 
 
-png(graph_file)
-plot(date,duration_dt[2:length(duration_dt)],
-xlab = 'Year', ylab= 'Total time spent in space to date (hours)'
-)
-dev.off()
-plot(date,duration_dt[2:length(duration_dt)],
-xlab = 'Year', ylab= 'Total time spent in space to date (hours)'
-)
+p <- ggplot(df, aes(date, duration_dt[2:length(duration_dt)])) +
+  geom_point() +
+  geom_line() +
+  xlab("Year") +
+  ylab("Total time spend in space to date (hours)") +
+  theme_minimal()
+
+ggsave(filename = graph_file, plot = p)
+
+p
