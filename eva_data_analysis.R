@@ -1,50 +1,103 @@
+# EVA cumulative time pipeline (tidyverse-first, with reusable functions + roxygen-style docs)
 
-library(tidyverse) #tidyverse "contains" ggplot2
+library(tidyverse)
 library(jsonlite)
 library(lubridate)
 
-
+# Files
 input_file  <- "./eva-data.json"
 output_file <- "./eva-data.csv"
 graph_file  <- "./cumulative_eva_graph.png"
 
-# load data
-eva_tbl <- jsonlite::fromJSON(input_file) |>
-  as_tibble()
+#' Read EVA data from a JSON file into a tibble
+#'
+#' Reads a JSON file containing an array of records (objects) and returns the
+#' contents as a tibble for downstream analysis.
+#'
+#' @param input_file Path to a JSON file (character scalar). The file is expected
+#'   to contain a JSON array of objects, e.g. `[{"eva":"1", ...}, {"eva":"2", ...}]`.
+#' @return A tibble with one row per JSON record and one column per field.
+#' @examples
+#' eva_tbl <- read_json_to_dataframe("./eva-data.json")
+#' dplyr::glimpse(eva_tbl)
+read_json_to_dataframe <- function(input_file) {
+  jsonlite::fromJSON(input_file) |>
+    tibble::as_tibble()
+}
 
-# basic variable transformation
-eva_tbl <- eva_tbl |>
-  mutate(
-    eva  = as.numeric(eva),
-    date = ymd_hms(date, quiet = TRUE) ) |>
-  filter(!is.na(duration), duration != "", !is.na(date))
+#' Clean an EVA dataframe and write it to CSV
+#'
+#' Coerces key columns to the expected types (e.g., `eva` to numeric and `date`
+#' to POSIXct), drops records missing a usable `duration` or `date`, writes the
+#' result to a CSV file, and returns the cleaned dataframe.
+#'
+#' @param df A data frame or tibble containing EVA records. Expected columns
+#'   include `eva`, `date`, and `duration`.
+#' @param output_file Path to the output CSV file (character scalar).
+#'
+#' @return The cleaned dataframe (same class as `df` where practical), suitable
+#'   for piping into downstream steps.
+#'
+#' @examples
+#' eva_tbl <- read_json_to_dataframe("./eva-data.json")
+#' eva_tbl <- write_dataframe_to_csv(eva_tbl, "./eva-data.csv")
+write_dataframe_to_csv <- function(df, output_file) {
+  df <- df |>
+    dplyr::mutate(
+      eva  = as.numeric(eva),
+      date = lubridate::ymd_hms(date, quiet = TRUE)
+    ) |>
+    dplyr::filter(!is.na(duration), duration != "", !is.na(date))
+  
+  readr::write_csv(df, output_file)
+  df
+}
 
-# write tabular output file
-readr::write_csv(eva_tbl, output_file)
+#' Plot cumulative EVA time in space and save the figure
+#'
+#' Computes EVA duration in hours from a `duration` string column (expected format
+#' like `"H:MM"` or `"HH:MM"`), calculates cumulative time over chronological
+#' `date`, generates a ggplot line chart, saves it to disk, and prints it.
+#'
+#' @param df A data frame or tibble containing EVA records. Expected columns:
+#'   `date` (POSIXct or parseable datetime) and `duration` (character `"H:MM"`).
+#' @param graph_file Path to the output image file (character scalar), e.g.
+#'   `"./cumulative_eva_graph.png"`.
+#'
+#' @return Invisibly returns the ggplot object.
+#'
+#' @examples
+#' eva_tbl <- read_json_to_dataframe("./eva-data.json") |>
+#'   write_dataframe_to_csv("./eva-data.csv")
+#' plot_cumulative_time_in_space(eva_tbl, "./cumulative_eva_graph.png")
+plot_cumulative_time_in_space <- function(df, graph_file) {
+  df <- df |>
+    dplyr::arrange(date) |>
+    dplyr::mutate(
+      duration_hours = {
+        parts <- stringr::str_split(duration, ":", n = 2, simplify = TRUE)
+        as.numeric(parts[, 1]) + as.numeric(parts[, 2]) / 60
+      },
+      cumulative_time = cumsum(duration_hours)
+    )
+  
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = date, y = cumulative_time)) +
+    ggplot2::geom_point() +
+    ggplot2::geom_line() +
+    ggplot2::labs(
+      x = "Year",
+      y = "Total time spent in space to date (hours)"
+    ) +
+    ggplot2::theme_minimal()
+  
+  ggplot2::ggsave(graph_file, plot = p, width = 9, height = 5, dpi = 300)
+  print(p)
+  
+  invisible(p)
+}
 
-# need to arrange by date to allow the cumulative sum to be calculated
-eva_tbl <- eva_tbl |>
-  arrange(date)
+# --- Main ---
+eva_tbl <- read_json_to_dataframe(input_file) |>
+  write_dataframe_to_csv(output_file = output_file)
 
-# duration variable is a character of hours:minutes and we need to split it
-eva_tbl <- eva_tbl |>
-  mutate(
-    duration_hours = {
-      parts <- str_split(duration, ":", n = 2, simplify = TRUE) # simplify to return character matrix, 2 is max length of each element
-      as.numeric(parts[, 1]) + as.numeric(parts[, 2]) / 60 # convert to hours
-    },
-    cumulative_time = cumsum(duration_hours)
-  )
-
-
-cumulative_spacetime_plot <- ggplot(eva_tbl, aes(x = date, y = cumulative_time)) +
-  geom_point() +
-  geom_line() +
-  labs(
-    x = "Year",
-    y = "Total time spent in space to date (hours)"
-  ) +
-  theme_minimal()
-
-ggsave(graph_file, plot = cumulative_spacetime_plot, width = 9, height = 5, dpi = 300)
-print(cumulative_spacetime_plot)
+plot_cumulative_time_in_space(eva_tbl, graph_file)
