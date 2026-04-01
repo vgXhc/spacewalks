@@ -3,69 +3,35 @@ library(lubridate)
 library(tidyverse)
 
 
-# https://data.nasa.gov/resource/eva.json (with modifications)
-input_file = 'eva-data.json'
-output_file = 'eva-data.csv'
-graph_file = 'cumulative_eva_graph.png'
+# source data: https://data.nasa.gov/resource/eva.json (with modifications)
+input_file  <-  "eva-data.json"
+output_file <-  "eva-data.csv" # to have a tabular output file
+graph_file <-  "cumulative_eva_graph.png"
 
-spacewalk_data <- read_json(input_file)
-data=as.data.frame(spacewalk_data[[1]])
+spacewalk_data <- jsonlite::fromJSON(input_file) |>
+  as_tibble()
 
-for( i in 2:374){
-  r = spacewalk_data[[i]]
-    print(r)
-    data =merge(data, as.data.frame(r),  all=TRUE)
-}
-#data.pop(0)
-## Comment out this bit if you don't want the spreadsheet
-write.csv(output_file)
+# Comment out this bit if you don't want the spreadsheet
+write.csv(x = spacewalk_data,
+          file = output_file)
 
-
-
-time <- c()
-date = Date()
-
-
-j=1
-for (i in rownames(data)){
-    print(data[j, ])
-    # and this bit
-    # w.writerow(data[j].values())
-    if (!is.na(data[j,]$duration)){
-        duration_str=data[j,]$duration
-        if(duration_str == ''){
-          #do nothing
-        }else{
-            duration_dt=as.POSIXlt(duration_str,format='%H:%M')
-            duration_hours <- as.numeric(as.difftime(hour(duration_dt), units = 'hours')+as.difftime(minute(duration_dt), units='mins')+as.difftime(second(duration_dt), units='secs'))/(60*60)
-            print(duration_dt,duration_hours)
-            time <- c(time, duration_hours)
-            if(!is.na(data[j,]$date)){
-                date= c(date, as.Date(substr(data[j,'date'], 1, 10), format = '%Y-%m-%d'))
-                #date.append(data[j]['date'][0:10])
-
-            }else{
-              time <- time[1:length(time) -1]
-                }
-            }
-        }
-    j = j+1
-}
-
-duration_dt=0
-for(i in time)
-    duration_dt <- c(duration_dt, duration_dt[length(duration_dt)]+i)
+# create cumulative duration of spacewalks
+spacewalk_data <- spacewalk_data |>
+  filter(!is.na(date)) |>
+  mutate(
+    date = ymd_hms(date),
+    duration_hours = as.numeric(str_extract(duration, "\\d+")),
+    duration_minutes = as.numeric(str_extract(duration, "(?<=:)\\d+")),
+    duration_duration = duration(hours = duration_hours,
+                                 minutes = duration_minutes)
+  ) |>
+  filter(!is.na(duration_duration)) |>
+  arrange(date) |>
+  mutate(cumulative_duration = cumsum(duration_duration))
 
 
-df <- data.frame(
-date, time
-)[order(date, time), ]
-
-date <- df$date
-time <- df$time
-
-
-p <- ggplot(df, aes(date, duration_dt[2:length(duration_dt)])) +
+p <-   spacewalk_data |>
+  ggplot(aes(date, cumulative_duration / 60)) +
   geom_point() +
   geom_line() +
   xlab("Year") +
