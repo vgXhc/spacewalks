@@ -1,43 +1,50 @@
+
+library(tidyverse) #tidyverse "contains" ggplot2
 library(jsonlite)
 library(lubridate)
-library(tidyverse)
 
 
-# source data: https://data.nasa.gov/resource/eva.json (with modifications)
-input_file  <-  "eva-data.json"
-output_file <-  "eva-data.csv" # to have a tabular output file
-graph_file <-  "cumulative_eva_graph.png"
+input_file  <- "./eva-data.json"
+output_file <- "./eva-data.csv"
+graph_file  <- "./cumulative_eva_graph.png"
 
-spacewalk_data <- jsonlite::fromJSON(input_file) |>
+# load data
+eva_tbl <- jsonlite::fromJSON(input_file) |>
   as_tibble()
 
-# Comment out this bit if you don't want the spreadsheet
-write.csv(x = spacewalk_data,
-          file = output_file)
-
-# create cumulative duration of spacewalks
-spacewalk_data <- spacewalk_data |>
-  filter(!is.na(date)) |>
+# basic variable transformation
+eva_tbl <- eva_tbl |>
   mutate(
-    date = ymd_hms(date),
-    duration_hours = as.numeric(str_extract(duration, "\\d+")),
-    duration_minutes = as.numeric(str_extract(duration, "(?<=:)\\d+")),
-    duration_duration = duration(hours = duration_hours,
-                                 minutes = duration_minutes)
-  ) |>
-  filter(!is.na(duration_duration)) |>
-  arrange(date) |>
-  mutate(cumulative_duration = cumsum(duration_duration))
+    eva  = as.numeric(eva),
+    date = ymd_hms(date, quiet = TRUE) ) |>
+  filter(!is.na(duration), duration != "", !is.na(date))
+
+# write tabular output file
+readr::write_csv(eva_tbl, output_file)
+
+# need to arrange by date to allow the cumulative sum to be calculated
+eva_tbl <- eva_tbl |>
+  arrange(date)
+
+# duration variable is a character of hours:minutes and we need to split it
+eva_tbl <- eva_tbl |>
+  mutate(
+    duration_hours = {
+      parts <- str_split(duration, ":", n = 2, simplify = TRUE) # simplify to return character matrix, 2 is max length of each element
+      as.numeric(parts[, 1]) + as.numeric(parts[, 2]) / 60 # convert to hours
+    },
+    cumulative_time = cumsum(duration_hours)
+  )
 
 
-p <-   spacewalk_data |>
-  ggplot(aes(date, cumulative_duration / 60)) +
+cumulative_spacetime_plot <- ggplot(eva_tbl, aes(x = date, y = cumulative_time)) +
   geom_point() +
   geom_line() +
-  xlab("Year") +
-  ylab("Total time spend in space to date (hours)") +
+  labs(
+    x = "Year",
+    y = "Total time spent in space to date (hours)"
+  ) +
   theme_minimal()
 
-ggsave(filename = graph_file, plot = p)
-
-p
+ggsave(graph_file, plot = cumulative_spacetime_plot, width = 9, height = 5, dpi = 300)
+print(cumulative_spacetime_plot)
